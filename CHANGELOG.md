@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.1 (2025-11-22)
+
+### Bug Fixes
+
+- Added --version to jlcpcb-mcp-setup
+  ([`6e8995b`](https://github.com/peterb154/jlcpcb-search-mcp/commit/6e8995b89540885621e503515656485b8099bf48))
+
+
 ## v1.1.0 (2025-11-22)
 
 ### Bug Fixes
