@@ -1,6 +1,6 @@
 """Entry point for running the JLCPCB MCP server as a module."""
 
-from .server import mcp
+from .server import main
 
 if __name__ == "__main__":
-    mcp.run()
+    main()

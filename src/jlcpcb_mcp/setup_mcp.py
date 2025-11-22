@@ -18,11 +18,11 @@ def create_mcp_config(config_path: Path, dev_mode: bool = False) -> Path:
     Returns:
         Path to the created config file
     """
+    # Use the installed executable script
     config = {
         "mcpServers": {
             "jlcpcb-search": {
-                "command": "python",
-                "args": ["-m", "jlcpcb_mcp.server"],
+                "command": "jlcpcb-mcp",
             }
         }
     }

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 jlcpcb-mcp-setup = "jlcpcb_mcp.setup_mcp:main"
+jlcpcb-mcp = "jlcpcb_mcp.server:main"
 
 [project.urls]
 Homepage = "https://github.com/peterb154/jlcpcb-search-mcp"

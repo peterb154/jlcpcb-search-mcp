@@ -505,6 +505,10 @@ def get_component_details(query: ComponentDetailsQuery) -> str:
     return output
 
 
-if __name__ == "__main__":
-    # Run the MCP server
+def main():
+    """Entry point for running the MCP server."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
