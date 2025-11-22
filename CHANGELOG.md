@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.2 (2025-11-22)
+
+### Bug Fixes
+
+- Correct MCP config file location to .mcp.json
+  ([`afe13ea`](https://github.com/peterb154/jlcpcb-search-mcp/commit/afe13eadaadba8b85015e20e59edb447e045ee1f))
+
+
 ## v1.0.1 (2025-11-22)
 
 ### Bug Fixes
