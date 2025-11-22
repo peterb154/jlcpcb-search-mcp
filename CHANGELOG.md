@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v1.1.0 (2025-11-22)
+
+### Bug Fixes
+
+- Corrected mcp.json location and cleaned up docs
+  ([`e277088`](https://github.com/peterb154/jlcpcb-search-mcp/commit/e27708856c3154af2b48fa2223376b0e8875546f))
+
+### Features
+
+- Add jlcpcb-mcp executable and simplify MCP configuration
+  ([`19c1c64`](https://github.com/peterb154/jlcpcb-search-mcp/commit/19c1c64071a4fc64f605275bc7bf9996712a83e4))
+
+
 ## v1.0.2 (2025-11-22)
 
 ### Bug Fixes
