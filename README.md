@@ -16,33 +16,33 @@ A Model Context Protocol (MCP) server that provides AI assistants with powerful 
 
 Ask Claude natural questions about components:
 
-> "Can you find a good 10uF SMD capacitor that can support 10V or less?"
+**You:** "Can you find a good 10uF SMD capacitor that can support 10V or less?"
 
-Claude searches through 450K+ components and responds with detailed recommendations:
+**Claude's Response:**
 
-> Based on my search, here are some good 10uF SMD capacitors that can support 10V or less:
->
-> **Recommended Options (Aluminum Electrolytic SMD):**
->
-> **Best Choice - C4747968 (RST10UF16V013)**
->
-> - Rating: 10uF, 16V
-> - Package: SMD, D4xL5.4mm
-> - Stock: 76,080 units (excellent availability)
-> - Price: $0.0248 (20+), $0.0170 (600+)
-> - Link: <https://jlcpcb.com/partdetail/C4747968>
->
-> **Alternative - C970654 (RVT1C100M0405)**
->
-> - Rating: 10uF, 16V
-> - Package: SMD, D4xL5.4mm
-> - Stock: 7,360 units
-> - Price: $0.0293 (20+), $0.0202 (600+)
-> - Link: <https://jlcpcb.com/partdetail/C970654>
->
-> All of these are aluminum electrolytic SMD capacitors rated for 16V, which gives you plenty of margin for a 10V application. The C4747968 is my top recommendation due to its excellent stock levels and lower price.
->
-> Note: These are all Extended parts (not Basic), so they will incur additional assembly fees if you're using JLCPCB assembly.
+Based on my search, here are some good 10uF SMD capacitors that can support 10V or less:
+
+**Recommended Options (Aluminum Electrolytic SMD):**
+
+### Best Choice - C4747968 (RST10UF16V013)
+
+- Rating: 10uF, 16V
+- Package: SMD, D4xL5.4mm
+- Stock: 76,080 units (excellent availability)
+- Price: $0.0248 (20+), $0.0170 (600+)
+- Link: <https://jlcpcb.com/partdetail/C4747968>
+
+### Alternative - C970654 (RVT1C100M0405)
+
+- Rating: 10uF, 16V
+- Package: SMD, D4xL5.4mm
+- Stock: 7,360 units
+- Price: $0.0293 (20+), $0.0202 (600+)
+- Link: <https://jlcpcb.com/partdetail/C970654>
+
+All of these are aluminum electrolytic SMD capacitors rated for 16V, which gives you plenty of margin for a 10V application. The C4747968 is my top recommendation due to its excellent stock levels and lower price.
+
+Note: These are all Extended parts (not Basic), so they will incur additional assembly fees if you're using JLCPCB assembly.
 
 ## Installation
 

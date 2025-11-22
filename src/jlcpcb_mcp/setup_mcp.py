@@ -67,6 +67,14 @@ def main():
     """Main CLI entry point."""
     import argparse
 
+    # Get version
+    try:
+        from importlib.metadata import version
+
+        __version__ = version("jlcpcb-search-mcp")
+    except Exception:
+        __version__ = "unknown"
+
     parser = argparse.ArgumentParser(
         description="Configure JLCPCB MCP server for Claude Code",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -95,6 +103,10 @@ After setup:
   2. Check that 'jlcpcb-search' MCP server is connected
   3. Ask Claude to search for components!
         """,
+    )
+
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
