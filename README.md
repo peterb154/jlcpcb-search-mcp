@@ -502,6 +502,6 @@ Together, these tools provide an AI-powered component search experience integrat
 
 ## Support
 
-- Issues: [GitHub Issues](https://github.com/yourusername/jlcpcb-search-mcp/issues)
-- Documentation: [docs/](docs/)
-- MCP Protocol: [Model Context Protocol](https://modelcontextprotocol.io/)
+- **Issues**: [GitHub Issues](https://github.com/peterb154/jlcpcb-search-mcp/issues)
+- **Documentation**: [docs/](docs/)
+- **MCP Protocol**: [Model Context Protocol](https://modelcontextprotocol.io/)
