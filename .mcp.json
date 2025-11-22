@@ -1,0 +1,14 @@
+ {
+  "mcpServers": {
+    "jlcpcb-search": {
+      "command": "python",
+      "args": [
+        "-m",
+        "jlcpcb_mcp.server"
+      ],
+      "env": {
+        "JLCPCB_DATABASE_PATH": "data/components.sqlite"
+      }
+    }
+  }
+}

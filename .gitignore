@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local development data
+data/
+*.sqlite
+*.zip
+*.db
+
+# Test coverage
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Claude Code workspace MCP config (user-specific)
+.code/
+
+# uv lock file
+uv.lock
