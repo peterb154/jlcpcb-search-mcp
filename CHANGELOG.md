@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.1.3 (2025-11-22)
+
+### Bug Fixes
+
+- Restore README.md with proper markdown
+  ([`f7c2d55`](https://github.com/peterb154/jlcpcb-search-mcp/commit/f7c2d551bc968f7535ef2e61b4774d721a117aad))
+
+### Chores
+
+- Add .gitattributes to ensure proper text handling
+  ([`ec4f945`](https://github.com/peterb154/jlcpcb-search-mcp/commit/ec4f945c48e39da639bf0e5ebbf7ac5308d2d481))
+
+### Documentation
+
+- Add PyPI badge and ensure markdown rendering
+  ([`e567cf0`](https://github.com/peterb154/jlcpcb-search-mcp/commit/e567cf0aceb0e031801aab6608dc49244a0d61aa))
+
+
 ## v1.1.2 (2025-11-22)
 
 ### Bug Fixes
