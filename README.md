@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that provides AI assistants with powerful search capabilities for JLCPCB's electronic component catalog. Search 450,000+ components with real-time stock levels and pricing.
 
+[![PyPI version](https://badge.fury.io/py/jlcpcb-search-mcp.svg)](https://pypi.org/project/jlcpcb-search-mcp/)
+
 > Built on top of [yaqwsx/jlcparts](https://github.com/yaqwsx/jlcparts) - huge thanks to Jan Mrázek for doing the hard work of downloading JLCPCB XLS sheets, converting them to structured JSON, and hosting them for the community!
 
 ## Features
