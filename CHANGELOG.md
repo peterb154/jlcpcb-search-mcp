@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.2 (2025-11-22)
+
+### Bug Fixes
+
+- Force GitHub to re-render README.md
+  ([`08bcef4`](https://github.com/peterb154/jlcpcb-search-mcp/commit/08bcef486b3577399dcba46f6990ed1c26589b9a))
+
+
 ## v1.1.1 (2025-11-22)
 
 ### Bug Fixes

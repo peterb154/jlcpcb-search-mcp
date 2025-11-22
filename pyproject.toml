@@ -1,6 +1,6 @@
 [project]
 name = "jlcpcb-search-mcp"
-version = "1.1.1"
+version = "1.1.2"
 description = "MCP server for searching JLCPCB components with live stock and pricing"
 readme = "README.md"
 authors = [
