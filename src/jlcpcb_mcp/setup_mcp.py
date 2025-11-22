@@ -7,13 +7,16 @@ import sys
 from pathlib import Path
 
 
-def create_mcp_config(target_dir: Path, dev_mode: bool = False) -> None:
+def create_mcp_config(config_path: Path, dev_mode: bool = False) -> Path:
     """
     Create MCP configuration file.
 
     Args:
-        target_dir: Directory where mcp.json should be created
+        config_path: Full path to the config file to create
         dev_mode: Whether to enable development mode
+
+    Returns:
+        Path to the created config file
     """
     config = {
         "mcpServers": {
@@ -29,43 +32,35 @@ def create_mcp_config(target_dir: Path, dev_mode: bool = False) -> None:
         config["mcpServers"]["jlcpcb-search"]["env"] = {"JLCPCB_DEV_MODE": "1"}
 
     # Create directory if it doesn't exist
-    target_dir.mkdir(parents=True, exist_ok=True)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Write config file
-    config_path = target_dir / "mcp.json"
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
     return config_path
 
 
-def get_workspace_config_dir() -> Path | None:
-    """Get the .code directory for the current workspace."""
-    # Try to find .code directory in current or parent directories
-    current = Path.cwd()
-
-    # Check current directory and up to 3 levels up
-    for _ in range(4):
-        code_dir = current / ".code"
-        if code_dir.exists() or current == current.parent:
-            return code_dir
-        current = current.parent
-
-    # If not found, use current directory
-    return Path.cwd() / ".code"
+def get_workspace_config_path() -> Path:
+    """Get the .mcp.json path for the current workspace."""
+    # Use current working directory as workspace root
+    return Path.cwd() / ".mcp.json"
 
 
-def get_global_config_dir() -> Path:
-    """Get the global Claude Desktop configuration directory."""
+def get_global_config_path() -> Path:
+    """Get the global Claude Desktop mcp.json configuration path."""
     if sys.platform == "darwin":  # macOS
-        return Path.home() / "Library/Application Support/Claude"
+        config_dir = Path.home() / "Library/Application Support/Claude"
     elif sys.platform == "win32":  # Windows
         appdata = os.getenv("APPDATA")
         if appdata:
-            return Path(appdata) / "Claude"
-        return Path.home() / "AppData/Roaming/Claude"
+            config_dir = Path(appdata) / "Claude"
+        else:
+            config_dir = Path.home() / "AppData/Roaming/Claude"
     else:  # Linux
-        return Path.home() / ".config/claude"
+        config_dir = Path.home() / ".config/claude"
+
+    return config_dir / "mcp.json"
 
 
 def main():
@@ -77,17 +72,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Setup for current workspace (creates .code/mcp.json)
-  python -m jlcpcb_mcp.setup_mcp --workspace
+  # Setup for current workspace (creates .mcp.json)
+  jlcpcb-mcp-setup --workspace
 
   # Setup for current workspace in dev mode
-  python -m jlcpcb_mcp.setup_mcp --workspace --dev
+  jlcpcb-mcp-setup --workspace --dev
 
   # Setup globally for Claude Desktop
-  python -m jlcpcb_mcp.setup_mcp --global
+  jlcpcb-mcp-setup --global
 
   # Setup in custom directory
-  python -m jlcpcb_mcp.setup_mcp --dir /path/to/config
+  jlcpcb-mcp-setup --dir /path/to/config
 
 After setup:
   1. Reload your editor window (Cmd+Shift+P → Developer: Reload Window)
@@ -100,7 +95,7 @@ After setup:
     group.add_argument(
         "--workspace",
         action="store_true",
-        help="Create config in workspace .code directory",
+        help="Create .mcp.json in current workspace directory",
     )
     group.add_argument(
         "--global",
@@ -129,18 +124,16 @@ After setup:
 
     args = parser.parse_args()
 
-    # Determine target directory
+    # Determine target config path
     if args.workspace:
-        target_dir = get_workspace_config_dir()
+        config_path = get_workspace_config_path()
         config_type = "workspace"
     elif args.global_config:
-        target_dir = get_global_config_dir()
+        config_path = get_global_config_path()
         config_type = "global"
     else:
-        target_dir = args.dir
+        config_path = args.dir / "mcp.json"
         config_type = "custom"
-
-    config_path = target_dir / "mcp.json"
 
     # Check if config already exists
     if config_path.exists() and not args.force:
@@ -150,7 +143,7 @@ After setup:
 
     # Create configuration
     try:
-        created_path = create_mcp_config(target_dir, dev_mode=args.dev)
+        created_path = create_mcp_config(config_path, dev_mode=args.dev)
         print(f"✓ Created {config_type} MCP configuration")
         print(f"  Location: {created_path}")
         print()
