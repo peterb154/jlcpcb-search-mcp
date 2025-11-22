@@ -84,6 +84,12 @@ Examples:
   # Setup in custom directory
   jlcpcb-mcp-setup --dir /path/to/config
 
+  # Refresh/update the component database
+  jlcpcb-mcp-setup --refresh-db
+
+  # Show database status and age
+  jlcpcb-mcp-setup --status
+
 After setup:
   1. Reload your editor window (Cmd+Shift+P → Developer: Reload Window)
   2. Check that 'jlcpcb-search' MCP server is connected
@@ -109,6 +115,16 @@ After setup:
         metavar="PATH",
         help="Create config in custom directory",
     )
+    group.add_argument(
+        "--refresh-db",
+        action="store_true",
+        help="Refresh/update the component database to get latest parts",
+    )
+    group.add_argument(
+        "--status",
+        action="store_true",
+        help="Show database status and information",
+    )
 
     parser.add_argument(
         "--dev",
@@ -123,6 +139,96 @@ After setup:
     )
 
     args = parser.parse_args()
+
+    # Handle database status
+    if args.status:
+        try:
+            from datetime import datetime
+
+            from .database import DatabaseManager
+
+            db = DatabaseManager()
+
+            print("📊 JLCPCB MCP Database Status")
+            print("=" * 70)
+            print()
+
+            # Check if database exists
+            if not db.db_path.exists():
+                print("❌ Database not found")
+                print(f"📍 Expected location: {db.db_path}")
+                print()
+                print("Run 'jlcpcb-mcp-setup --workspace' to set up the database.")
+                return
+
+            # Get database info
+            print("✅ Database found")
+            print(f"📍 Location: {db.db_path}")
+            print(f"📦 Size: {db.db_path.stat().st_size / (1024**2):.1f} MB")
+            print()
+
+            # Get version info if available
+            if db.version_file.exists():
+                print("📄 Database Metadata:")
+                with open(db.version_file) as f:
+                    for line in f:
+                        if line.startswith("Downloaded:"):
+                            date_str = line.split(":", 1)[1].strip()
+                            try:
+                                dt = datetime.fromisoformat(date_str)
+                                age_days = (datetime.now() - dt).days
+                                print(
+                                    f"  Downloaded: {dt.strftime('%Y-%m-%d %H:%M')} ({age_days} days ago)"
+                                )
+                            except Exception:
+                                print(f"  {line.strip()}")
+                        else:
+                            print(f"  {line.strip()}")
+            else:
+                print("⚠️  No version metadata found")
+
+            print()
+            print("=" * 70)
+            print()
+            print("💡 To refresh the database: jlcpcb-mcp-setup --refresh-db")
+
+        except Exception as e:
+            print(f"✗ Error checking database status: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        return
+
+    # Handle database refresh
+    if args.refresh_db:
+        try:
+            from .database import DatabaseManager
+
+            print("🔄 Refreshing component database...")
+            print()
+
+            db = DatabaseManager()
+
+            # Remove existing database
+            if db.db_path.exists():
+                print(f"📍 Database location: {db.db_path}")
+                db.db_path.unlink()
+                print("✓ Removed old database")
+                print()
+
+            # Trigger download
+            db.ensure_database()
+
+            print()
+            print("✅ Database refresh complete!")
+            print(f"📊 Database size: ~{db.db_path.stat().st_size / (1024**2):.0f}MB")
+            print()
+            print("You can now search for the latest JLCPCB components!")
+
+        except Exception as e:
+            print(f"✗ Error refreshing database: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        return
 
     # Determine target config path
     if args.workspace:

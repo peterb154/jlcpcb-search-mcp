@@ -4,6 +4,7 @@ import gzip
 import json
 import os
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -56,29 +57,43 @@ class DatabaseManager:
 
         # Verify database is valid
         if not self._verify_database():
-            print("Database corrupted, re-downloading...")
+            self._log("⚠️  Database corrupted, re-downloading...")
             self._download_database()
 
         return self.db_path
+
+    def _log(self, message: str, end: str = "\n") -> None:
+        """Log to stderr for visibility in MCP clients."""
+        print(message, file=sys.stderr, end=end, flush=True)
 
     def _download_database(self) -> None:
         """Download and build the JLCPCB database from JSON sources."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Building JLCPCB database at {self.data_dir}...")
-        print("This may take a few minutes on first run.")
+        self._log("=" * 70)
+        self._log("🔧 FIRST RUN: Building JLCPCB Component Database")
+        self._log("=" * 70)
+        self._log(f"Location: {self.data_dir}")
+        self._log("")
+        self._log("This is a ONE-TIME setup that takes 5-10 minutes.")
+        self._log("Future searches will be instant!")
+        self._log("")
 
         try:
             # Download index
-            print("\nDownloading component index...")
+            self._log("📥 Step 1/3: Downloading component index...")
             index_url = f"{self.DB_BASE_URL}/{self.INDEX_FILENAME}"
             response = requests.get(index_url, timeout=30)
             response.raise_for_status()
             index = response.json()
+            self._log("✓ Index downloaded")
+            self._log("")
 
             # Create database
-            print("Creating database...")
+            self._log("🔨 Step 2/3: Creating database schema...")
             self._create_database_schema()
+            self._log("✓ Schema created")
+            self._log("")
 
             # Get connection
             conn = sqlite3.connect(self.db_path)
@@ -89,17 +104,19 @@ class DatabaseManager:
             total_categories = sum(len(subcats) for subcats in categories.values())
             processed = 0
 
-            print(f"\nProcessing {total_categories} categories...")
+            self._log(f"📦 Step 3/3: Downloading and processing {total_categories} categories...")
+            self._log("This is the slow part - downloading ~50MB of component data...")
+            self._log("")
 
             for main_cat, subcategories in categories.items():
                 for subcat_name, subcat_info in subcategories.items():
                     processed += 1
                     sourcename = subcat_info["sourcename"]
 
-                    print(
-                        f"\r[{processed}/{total_categories}] {main_cat} / {subcat_name}...",
+                    percent = (processed / total_categories) * 100
+                    self._log(
+                        f"\r[{processed}/{total_categories}] ({percent:.1f}%) {main_cat} / {subcat_name}...",
                         end="",
-                        flush=True,
                     )
 
                     # Download category JSON (gzipped)
@@ -115,14 +132,20 @@ class DatabaseManager:
                         self._insert_components(cursor, data, main_cat, subcat_name)
 
                     except Exception as e:
-                        print(f"\n  Warning: Failed to process {subcat_name}: {e}")
+                        self._log(f"\n  ⚠️  Warning: Failed to process {subcat_name}: {e}")
                         continue
 
             # Commit and close
             conn.commit()
             conn.close()
 
-            print(f"\n\nDatabase ready at {self.db_path}")
+            self._log("\n")
+            self._log("=" * 70)
+            self._log("✅ Database build complete!")
+            self._log(f"📊 Database size: ~{self.db_path.stat().st_size / (1024**2):.0f}MB")
+            self._log(f"📍 Location: {self.db_path}")
+            self._log("=" * 70)
+            self._log("")
 
             # Save metadata
             with open(self.version_file, "w") as f:
@@ -131,7 +154,7 @@ class DatabaseManager:
                 f.write(f"Categories: {total_categories}\n")
 
         except Exception as e:
-            print(f"\nError building database: {e}")
+            self._log(f"\n❌ Error building database: {e}")
             # Clean up failed database
             if self.db_path.exists():
                 self.db_path.unlink()

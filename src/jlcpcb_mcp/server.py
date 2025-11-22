@@ -505,6 +505,96 @@ def get_component_details(query: ComponentDetailsQuery) -> str:
     return output
 
 
+@mcp.tool()
+def database_status() -> str:
+    """
+    Get status and information about the local component database.
+
+    Returns information including database location, size, age, and last update time.
+    """
+    from datetime import datetime
+
+    output = "# Database Status\n\n"
+
+    try:
+        if not db_manager.db_path.exists():
+            output += "**Status**: ❌ Database not found\n\n"
+            output += f"**Expected location**: `{db_manager.db_path}`\n\n"
+            output += "The database will be automatically downloaded on first search.\n"
+            return output
+
+        # Get database info
+        db_size_mb = db_manager.db_path.stat().st_size / (1024**2)
+        output += "**Status**: ✅ Database ready\n\n"
+        output += f"**Location**: `{db_manager.db_path}`\n\n"
+        output += f"**Size**: {db_size_mb:.1f} MB\n\n"
+
+        # Get version info if available
+        if db_manager.version_file.exists():
+            output += "## Metadata\n\n"
+            with open(db_manager.version_file) as f:
+                for line in f:
+                    if line.startswith("Downloaded:"):
+                        date_str = line.split(":", 1)[1].strip()
+                        try:
+                            dt = datetime.fromisoformat(date_str)
+                            age_days = (datetime.now() - dt).days
+                            output += f"- **Downloaded**: {dt.strftime('%Y-%m-%d %H:%M')} ({age_days} days ago)\n"
+                        except Exception:
+                            output += f"- {line.strip()}\n"
+                    else:
+                        line_clean = line.strip()
+                        if line_clean:
+                            output += f"- {line_clean}\n"
+
+        output += "\n💡 **Tip**: Use `refresh_database()` to update to the latest components.\n"
+
+    except Exception as e:
+        output += f"**Error**: {e}\n"
+
+    return output
+
+
+@mcp.tool()
+def refresh_database() -> str:
+    """
+    Refresh/update the component database to get the latest parts from JLCPCB.
+
+    This downloads the latest component data (~50MB) and rebuilds the local database.
+    Takes 5-10 minutes. Use this monthly to stay current with new components.
+    """
+    import sys
+
+    output = "# Database Refresh\n\n"
+
+    try:
+        output += "🔄 Starting database refresh...\n\n"
+        output += "This will take 5-10 minutes. Progress will be shown below.\n\n"
+        output += "---\n\n"
+
+        # Remove existing database
+        if db_manager.db_path.exists():
+            output += f"📍 Removing old database from: `{db_manager.db_path}`\n\n"
+            db_manager.db_path.unlink()
+
+        # Trigger download (progress will go to stderr)
+        print("Starting database download and build...", file=sys.stderr, flush=True)
+        db_manager.ensure_database()
+
+        db_size_mb = db_manager.db_path.stat().st_size / (1024**2)
+        output += "---\n\n"
+        output += "✅ **Database refresh complete!**\n\n"
+        output += f"- **Size**: {db_size_mb:.0f} MB\n"
+        output += f"- **Location**: `{db_manager.db_path}`\n\n"
+        output += "You can now search for the latest JLCPCB components!\n"
+
+    except Exception as e:
+        output += f"\n❌ **Error refreshing database**: {e}\n"
+        output += "\nPlease try again or check your internet connection.\n"
+
+    return output
+
+
 def main():
     """Entry point for running the MCP server."""
     mcp.run()
