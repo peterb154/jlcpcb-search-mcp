@@ -46,6 +46,11 @@ exclude = [
     "/CLAUDE_CODE_SETUP.md",
     "/TESTING.md",
     "/uv.lock",
+    "/claude.md",
+    "/docs",
+    "/.python-version",
+    "/.mcp.json",
+    "/DEPLOYMENT.md",
 ]
 
 [dependency-groups]

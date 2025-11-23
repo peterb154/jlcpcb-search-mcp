@@ -105,9 +105,7 @@ After setup:
         """,
     )
 
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
