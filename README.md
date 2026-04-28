@@ -190,6 +190,25 @@ The database is **shared** across all your projects by default (recommended):
 
 **Dev mode (`--dev`)**: Only use this if you're developing the jlcpcb-mcp package itself. It creates a separate database in `./data/` which is useful for testing but wastes space for normal usage.
 
+#### Data Freshness
+
+This server uses a **hybrid** approach — a local catalog snapshot for fast search, plus live API calls for stock and pricing.
+
+| Data | Source | Freshness |
+|------|--------|-----------|
+| Component catalog (descriptions, packages, attributes, categories) | Local SQLite, built from [yaqwsx/jlcparts](https://github.com/yaqwsx/jlcparts) | Snapshot from your last refresh |
+| Stock levels | Live JLCPCB API (`wmsc.lcsc.com`) | Real-time, per query |
+| Pricing tiers | Live JLCPCB API | Real-time, per query |
+| Datasheet URL | Live JLCPCB API | Real-time, per query |
+
+The local catalog does **not** auto-update. Refresh it periodically to pick up newly-added parts, removed parts, and metadata changes:
+
+```bash
+jlcpcb-mcp-setup --refresh-db
+```
+
+For most workflows, refreshing weekly or monthly is sufficient. Stock and price decisions are always made against live data, so you don't need a fresh catalog to trust the numbers on parts you already know.
+
 ## License
 
 MIT License - see LICENSE file for details
