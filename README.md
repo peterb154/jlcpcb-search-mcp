@@ -50,12 +50,12 @@ Note: These are all Extended parts (not Basic), so they will incur additional as
 
 The MCP server exposes four tools to your AI assistant:
 
-|Tool|What it does|
-|----|------------|
-|`search_components`|Keyword search across the catalog. Optional filters: `category`, `package`, `basic_only`, `min_stock`, `max_results`.|
-|`get_component_details`|Full live details for an LCSC part — current stock, pricing tiers, full parameter list, datasheet, and images.|
-|`database_status`|Reports the local database location, size, and component count.|
-|`refresh_database`|Re-downloads the catalog snapshot from inside the chat — no CLI needed.|
+| Tool | What it does |
+|------|--------------|
+| `search_components` | Keyword search across the catalog. Optional filters: `category`, `package`, `basic_only`, `min_stock`, `max_results`. |
+| `get_component_details` | Full live details for an LCSC part — current stock, pricing tiers, full parameter list, datasheet, and images. |
+| `database_status` | Reports the local database location, size, and component count. |
+| `refresh_database` | Re-downloads the catalog snapshot from inside the chat — no CLI needed. |
 
 Most of the time you don't call these directly; you ask Claude in natural language ("find me a 10k 0805 resistor with at least 5k in stock") and it picks the right tool.
 
@@ -207,12 +207,12 @@ The database is **shared** across all your projects by default (recommended):
 
 This server uses a **hybrid** approach — a local catalog snapshot for fast search, plus live API calls for stock and pricing.
 
-|Data|Source|Freshness|
-|----|------|---------|
-|Component catalog (descriptions, packages, attributes, categories)|Local SQLite, built from [yaqwsx/jlcparts](https://github.com/yaqwsx/jlcparts)|Snapshot from your last refresh|
-|Stock levels|Live JLCPCB API (`wmsc.lcsc.com`)|Real-time, per query|
-|Pricing tiers|Live JLCPCB API|Real-time, per query|
-|Datasheet URL|Live JLCPCB API|Real-time, per query|
+| Data | Source | Freshness |
+|------|--------|-----------|
+| Component catalog (descriptions, packages, attributes, categories) | Local SQLite, built from [yaqwsx/jlcparts](https://github.com/yaqwsx/jlcparts) | Snapshot from your last refresh |
+| Stock levels | Live JLCPCB API (`wmsc.lcsc.com`) | Real-time, per query |
+| Pricing tiers | Live JLCPCB API | Real-time, per query |
+| Datasheet URL | Live JLCPCB API | Real-time, per query |
 
 The local catalog does **not** auto-update. Refresh it periodically to pick up newly-added parts, removed parts, and metadata changes:
 
