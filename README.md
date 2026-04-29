@@ -198,10 +198,10 @@ uv run jlcpcb-mcp-setup --refresh-db
 
 **What to expect:**
 
-- **Download**: ~50MB compressed data (1,268 categories)
-- **Final size**: ~917MB SQLite database uncompressed
-- **Time**: ~3 minutes on fast internet connection (500Mbps), up to 10 minutes on slower connections
-- **Progress**: Real-time updates showing download progress and category processing
+- **Download**: ~50MB compressed (manifest + attributes lookup table + ~1,294 per-subcategory shards)
+- **Final size**: ~1.8GB SQLite database uncompressed (~576k components, 1,289 subcategories)
+- **Time**: ~4 minutes on fast internet connection (500Mbps), up to 10 minutes on slower connections
+- **Progress**: Real-time updates showing download progress and subcategory processing
 
 If you don't pre-download, **your first Claude query will trigger the download automatically**, so expect a 3-10 minute wait.
 
