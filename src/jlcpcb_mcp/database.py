@@ -3,8 +3,10 @@
 import gzip
 import json
 import os
+import random
 import sqlite3
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +22,13 @@ class DatabaseManager:
     MANIFEST_FILENAME = "manifest.json"
     ATTR_LUT_FILENAME = "attributes-lut.json.gz"
     MANIFEST_VERSION = 2
+
+    # HTTP retry policy for upstream fetches. Connection errors and 5xx responses
+    # retry with exponential backoff + jitter; 4xx responses fail fast (404 means
+    # the file is gone, not transiently unavailable).
+    HTTP_RETRY_ATTEMPTS = 3
+    HTTP_BACKOFF_BASE = 0.5
+    HTTP_BACKOFF_MAX = 4.0
 
     def __init__(self):
         """Initialize database manager with appropriate storage location."""
@@ -68,12 +77,55 @@ class DatabaseManager:
         """Log to stderr for visibility in MCP clients."""
         print(message, file=sys.stderr, end=end, flush=True)
 
+    def _http_get_with_retry(self, url: str, timeout: int = 30) -> requests.Response:
+        """GET ``url`` with exponential backoff on transient failures.
+
+        Retries on connection errors, timeouts, and 5xx responses up to
+        ``HTTP_RETRY_ATTEMPTS`` times. 4xx responses raise immediately — those
+        are not transient and retrying won't help.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(self.HTTP_RETRY_ATTEMPTS):
+            try:
+                response = requests.get(url, timeout=timeout)
+            except requests.exceptions.RequestException as e:
+                last_exc = e
+            else:
+                if response.status_code < 500:
+                    response.raise_for_status()  # raises on 4xx, no-op on 2xx/3xx
+                    return response
+                last_exc = requests.exceptions.HTTPError(
+                    f"HTTP {response.status_code} for {url}"
+                )
+
+            if attempt + 1 < self.HTTP_RETRY_ATTEMPTS:
+                backoff = min(
+                    self.HTTP_BACKOFF_BASE * (2**attempt), self.HTTP_BACKOFF_MAX
+                )
+                # Jitter ±50% so retried clients don't synchronize against a flaky origin.
+                backoff *= 0.5 + random.random()
+                self._log(
+                    f"\n  ⚠️  Request failed ({last_exc}); "
+                    f"retrying in {backoff:.1f}s "
+                    f"(attempt {attempt + 2}/{self.HTTP_RETRY_ATTEMPTS})..."
+                )
+                time.sleep(backoff)
+
+        assert last_exc is not None  # loop body always sets last_exc on failure
+        raise last_exc
+
     def _download_database(self) -> None:
         """Download and build the JLCPCB database from upstream manifest + shards.
 
         Builds into a sibling ``*.tmp`` file and atomically renames on success so
-        a crashed or interrupted build never leaves a half-populated database in
-        place of a working one.
+        a *process crash* never leaves a partial DB at the final path — observers
+        always see either the previous DB or a fully-built new one.
+
+        Subcategory-level errors (failed shard download, malformed shard header,
+        etc.) are still logged and skipped per existing design, so a "successful"
+        build can silently omit subcategories that errored. That's a separate
+        concern from atomicity and is tracked via the per-subcategory warning
+        log lines.
         """
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -96,8 +148,7 @@ class DatabaseManager:
             # Download manifest
             self._log("📥 Step 1/4: Downloading manifest...")
             manifest_url = f"{self.DB_BASE_URL}/{self.MANIFEST_FILENAME}"
-            response = requests.get(manifest_url, timeout=30)
-            response.raise_for_status()
+            response = self._http_get_with_retry(manifest_url, timeout=30)
             manifest = response.json()
 
             manifest_version = manifest.get("version")
@@ -116,8 +167,7 @@ class DatabaseManager:
             self._log("📥 Step 2/4: Downloading attributes lookup table...")
             lut_filename = manifest.get("attributesLut", self.ATTR_LUT_FILENAME)
             lut_url = f"{self.DB_BASE_URL}/{lut_filename}"
-            lut_response = requests.get(lut_url, timeout=60)
-            lut_response.raise_for_status()
+            lut_response = self._http_get_with_retry(lut_url, timeout=60)
             lut = json.loads(gzip.decompress(lut_response.content))
             self._log(f"✓ LUT downloaded ({len(lut)} entries)")
             self._log("")
@@ -200,8 +250,7 @@ class DatabaseManager:
             schema maps field names ("lcsc", "stock", ...) to their integer index.
         """
         shard_url = f"{self.DB_BASE_URL}/{shard_filename}"
-        response = requests.get(shard_url, timeout=60)
-        response.raise_for_status()
+        response = self._http_get_with_retry(shard_url, timeout=60)
 
         text = gzip.decompress(response.content).decode("utf-8")
         lines = text.splitlines()

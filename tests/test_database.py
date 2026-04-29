@@ -6,6 +6,7 @@ import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from jlcpcb_mcp.database import DatabaseManager
 
@@ -373,18 +374,18 @@ class TestDatabaseManager:
         assert not version_file.exists()
 
     @patch("jlcpcb_mcp.database.requests.get")
-    def test_download_database_network_error(self, mock_get, tmp_path):
-        """A failed manifest fetch propagates and leaves no database behind."""
-        import requests as _requests
-
-        mock_get.side_effect = _requests.exceptions.ConnectionError("Network error")
+    def test_download_database_network_error(self, mock_get, tmp_path, monkeypatch):
+        """A persistent network failure propagates and leaves no database behind."""
+        # Make retries instant so the test doesn't actually sleep.
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda *_: None)
+        mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
 
         manager = DatabaseManager()
         manager.db_path = tmp_path / "components.sqlite"
         manager.data_dir = tmp_path
         manager.version_file = tmp_path / "version.txt"
 
-        with pytest.raises(_requests.exceptions.RequestException):
+        with pytest.raises(requests.exceptions.RequestException):
             manager._download_database()
 
         # Neither the final DB nor the temp scratch file should remain.
@@ -495,6 +496,7 @@ class TestDatabaseManager:
         def fake_get(url, timeout=None):
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
+            resp.status_code = 200
             if url.endswith("/manifest.json"):
                 resp.json = MagicMock(return_value=manifest)
             elif url.endswith("/attributes-lut.json.gz"):
@@ -582,6 +584,7 @@ class TestDatabaseManager:
         def fake_get(url, timeout=None):
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
+            resp.status_code = 200
             if url.endswith("/manifest.json"):
                 resp.json = MagicMock(return_value=manifest)
             elif url.endswith("/attributes-lut.json.gz"):
@@ -638,6 +641,7 @@ class TestDatabaseManager:
         def fake_get(url, timeout=None):
             resp = MagicMock()
             resp.raise_for_status = MagicMock()
+            resp.status_code = 200
             if url.endswith("/manifest.json"):
                 resp.json = MagicMock(return_value=manifest)
             elif url.endswith("/attributes-lut.json.gz"):
@@ -663,3 +667,231 @@ class TestDatabaseManager:
         # Warning was logged to stderr.
         captured = capsys.readouterr()
         assert "Manifest version 99" in captured.err
+
+    def test_insert_components_raises_on_missing_lcsc_in_schema(self, tmp_path):
+        """A shard header missing the required `lcsc` field bails immediately."""
+        db_path = tmp_path / "components.sqlite"
+        manager = DatabaseManager()
+        manager.db_path = db_path
+        manager.data_dir = tmp_path
+        manager._create_database_schema()
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        bad_schema = {"mfr": 0, "stock": 1}  # no "lcsc"
+        rows = [["does", "not", "matter"]]
+
+        with pytest.raises(KeyError):
+            manager._insert_components(cursor, rows, bad_schema, [], "Cat", "Sub")
+
+        conn.close()
+
+    def test_download_database_skips_subcategory_with_malformed_shard_header(
+        self, tmp_path, monkeypatch
+    ):
+        """A bad shard header skips its subcategory but does not abort the build."""
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda *_: None)
+        manifest = {
+            "version": 2,
+            "totalComponents": 1,
+            "attributesLut": "attributes-lut.json.gz",
+            "categories": [
+                {
+                    "id": 1,
+                    "category": "Good",
+                    "subcategory": "Subcat-A",
+                    "componentCount": 1,
+                    "shards": ["good.jsonl.gz"],
+                },
+                {
+                    "id": 2,
+                    "category": "Bad",
+                    "subcategory": "Subcat-B",
+                    "componentCount": 1,
+                    "shards": ["bad.jsonl.gz"],
+                },
+            ],
+        }
+        lut = [_attr("Basic/Extended", "Basic")]
+        good_shard = gzip.compress(
+            (
+                json.dumps(SHARD_SCHEMA)
+                + "\n"
+                + json.dumps(["C1", "M1", 2, "d", None, [], None, None, [0], 1, 1])
+            ).encode("utf-8")
+        )
+        # Header lacks the required `lcsc` field.
+        bad_schema = dict(SHARD_SCHEMA)
+        bad_schema.pop("lcsc")
+        bad_shard = gzip.compress(
+            (json.dumps(bad_schema) + "\n" + json.dumps(["x"] * 11)).encode("utf-8")
+        )
+        lut_bytes = gzip.compress(json.dumps(lut).encode("utf-8"))
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.status_code = 200
+            if url.endswith("/manifest.json"):
+                resp.json = MagicMock(return_value=manifest)
+            elif url.endswith("/attributes-lut.json.gz"):
+                resp.content = lut_bytes
+            elif url.endswith("/good.jsonl.gz"):
+                resp.content = good_shard
+            elif url.endswith("/bad.jsonl.gz"):
+                resp.content = bad_shard
+            else:
+                raise AssertionError(f"unexpected URL {url}")
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        manager.db_path = tmp_path / "components.sqlite"
+        manager.data_dir = tmp_path
+        manager.version_file = tmp_path / "version.txt"
+
+        manager._download_database()
+
+        # Good shard ingested; bad shard skipped silently (per design).
+        conn = sqlite3.connect(manager.db_path)
+        assert [r[0] for r in conn.execute("SELECT lcsc FROM components")] == ["C1"]
+        conn.close()
+
+    def test_download_database_closes_connection_on_failure(
+        self, tmp_path, monkeypatch
+    ):
+        """An exception after the build connection opens still closes it via the finally."""
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda *_: None)
+
+        # Manifest contains a malformed category — `subcat["category"]` is accessed
+        # outside the inner per-subcategory try, so the KeyError propagates and we
+        # rely on the outer try/finally to close the build connection.
+        manifest = {
+            "version": 2,
+            "totalComponents": 0,
+            "attributesLut": "attributes-lut.json.gz",
+            "categories": [{"id": 1, "componentCount": 0, "shards": []}],  # no "category" key
+        }
+        lut_bytes = gzip.compress(json.dumps([]).encode("utf-8"))
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.status_code = 200
+            if url.endswith("/manifest.json"):
+                resp.json = MagicMock(return_value=manifest)
+            elif url.endswith("/attributes-lut.json.gz"):
+                resp.content = lut_bytes
+            else:
+                raise AssertionError(f"unexpected URL {url}")
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        # Wrap sqlite3.connect so we can observe close() calls. sqlite3.Connection
+        # itself doesn't allow attribute assignment, so we use a delegating proxy.
+        closed_paths: list[str] = []
+        real_connect = sqlite3.connect
+
+        class TrackingConn:
+            def __init__(self, real_conn, path):
+                object.__setattr__(self, "_real_conn", real_conn)
+                object.__setattr__(self, "_path", str(path))
+
+            def close(self):
+                closed_paths.append(self._path)
+                return self._real_conn.close()
+
+            def __getattr__(self, name):
+                return getattr(self._real_conn, name)
+
+        def tracking_connect(path, *args, **kwargs):
+            return TrackingConn(real_connect(path, *args, **kwargs), path)
+
+        monkeypatch.setattr("jlcpcb_mcp.database.sqlite3.connect", tracking_connect)
+
+        manager = DatabaseManager()
+        manager.db_path = tmp_path / "components.sqlite"
+        manager.data_dir = tmp_path
+        manager.version_file = tmp_path / "version.txt"
+
+        with pytest.raises(KeyError):
+            manager._download_database()
+
+        # The build conn opened on the tmp path must have been closed before cleanup.
+        assert any(p.endswith("components.sqlite.tmp") for p in closed_paths)
+        # And the tmp file should be gone.
+        assert not (tmp_path / "components.sqlite.tmp").exists()
+
+    # ---- HTTP retry/backoff (issue #6) ----
+
+    def test_http_get_with_retry_succeeds_after_transient_5xx(self, monkeypatch):
+        """Two 503s followed by a 200 should produce a successful response."""
+        sleeps: list[float] = []
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda s: sleeps.append(s))
+
+        attempts = []
+
+        def fake_get(url, timeout=None):
+            attempts.append(url)
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            if len(attempts) < 3:
+                resp.status_code = 503
+            else:
+                resp.status_code = 200
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        result = manager._http_get_with_retry("http://example/foo", timeout=5)
+
+        assert result.status_code == 200
+        assert len(attempts) == 3
+        assert len(sleeps) == 2  # slept between attempts 1→2 and 2→3, not after 3
+
+    def test_http_get_with_retry_fails_fast_on_4xx(self, monkeypatch):
+        """A 404 raises immediately without retrying — it's not transient."""
+        sleeps: list[float] = []
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda s: sleeps.append(s))
+
+        attempts = []
+
+        def fake_get(url, timeout=None):
+            attempts.append(url)
+            resp = MagicMock()
+            resp.status_code = 404
+            resp.raise_for_status = MagicMock(
+                side_effect=requests.exceptions.HTTPError("404 Not Found")
+            )
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        with pytest.raises(requests.exceptions.HTTPError):
+            manager._http_get_with_retry("http://example/missing", timeout=5)
+
+        assert len(attempts) == 1
+        assert sleeps == []
+
+    def test_http_get_with_retry_exhausts_attempts(self, monkeypatch):
+        """Persistent connection errors raise after HTTP_RETRY_ATTEMPTS tries."""
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda *_: None)
+
+        attempts = []
+
+        def fake_get(url, timeout=None):
+            attempts.append(url)
+            raise requests.exceptions.ConnectionError("boom")
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        with pytest.raises(requests.exceptions.ConnectionError):
+            manager._http_get_with_retry("http://example/down", timeout=5)
+
+        assert len(attempts) == DatabaseManager.HTTP_RETRY_ATTEMPTS
