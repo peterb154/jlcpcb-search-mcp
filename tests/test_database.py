@@ -1,13 +1,40 @@
 """Unit tests for DatabaseManager."""
 
+import gzip
 import json
 import sqlite3
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from jlcpcb_mcp.database import DatabaseManager
+
+# Reusable shard schema header — line 1 of every upstream JSONL shard.
+SHARD_SCHEMA = {
+    "lcsc": 0,
+    "mfr": 1,
+    "joints": 2,
+    "description": 3,
+    "datasheet": 4,
+    "price": 5,
+    "img": 6,
+    "url": 7,
+    "attributes": 8,
+    "stock": 9,
+    "subcategory": 10,
+}
+
+
+def _attr(name: str, value: str) -> list:
+    """Build a single LUT entry in the upstream shape."""
+    return [
+        name,
+        {
+            "format": "${default}",
+            "primary": "default",
+            "values": {"default": [value, "string"]},
+        },
+    ]
 
 
 class TestDatabaseManager:
@@ -166,40 +193,35 @@ class TestDatabaseManager:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # Sample component data (format from jlcparts JSON)
-        component_data = {
-            "components": [
-                [
-                    "C17976",  # lcsc
-                    "1206W4F680JT5E",  # mfr_part
-                    33900,  # stock
-                    None,  # unknown field
-                    "https://datasheet.lcsc.com/test.pdf",  # datasheet
-                    [  # price tiers
-                        {"qFrom": 1, "qTo": 99, "price": 0.005},
-                        {"qFrom": 100, "qTo": 999, "price": 0.0037},
-                    ],
-                    "https://assets.lcsc.com/image.jpg",  # image
-                    None,  # unknown field
-                    {  # attributes
-                        "Basic/Extended": {
-                            "values": {"default": ["Basic"]}
-                        },
-                        "Manufacturer": {
-                            "values": {"default": ["Uniroyal Elec"]}
-                        },
-                        "Package": {
-                            "values": {"default": ["1206"]}
-                        },
-                    },
-                ]
+        lut = [
+            _attr("Basic/Extended", "Basic"),
+            _attr("Manufacturer", "Uniroyal Elec"),
+            _attr("Package", "1206"),
+        ]
+        rows = [
+            [
+                "C17976",  # lcsc
+                "1206W4F680JT5E",  # mfr
+                2,  # joints
+                "68Ω 250mW 1206 Chip Resistor",  # description
+                "https://datasheet.lcsc.com/test.pdf",  # datasheet
+                [  # price tiers
+                    {"qFrom": 1, "qTo": 99, "price": 0.005},
+                    {"qFrom": 100, "qTo": 999, "price": 0.0037},
+                ],
+                "https://assets.lcsc.com/image.jpg",  # img
+                "products/C17976",  # url
+                [0, 1, 2],  # attribute LUT ids
+                33900,  # stock
+                1,  # subcategory id
             ]
-        }
+        ]
 
-        manager._insert_components(cursor, component_data, "Resistors", "Chip Resistor")
+        manager._insert_components(
+            cursor, rows, SHARD_SCHEMA, lut, "Resistors", "Chip Resistor"
+        )
         conn.commit()
 
-        # Verify component was inserted
         cursor.execute("SELECT * FROM components WHERE lcsc = ?", ("C17976",))
         row = cursor.fetchone()
 
@@ -208,10 +230,12 @@ class TestDatabaseManager:
         assert row[1] == "1206W4F680JT5E"  # mfr_part
         assert row[2] == "Resistors"  # category
         assert row[3] == "Chip Resistor"  # subcategory
+        assert row[4] == "68Ω 250mW 1206 Chip Resistor"  # description (now populated)
         assert row[5] == 33900  # stock
         assert row[8] == 1  # basic flag
+        assert row[9] == "Uniroyal Elec"  # manufacturer
+        assert row[10] == "1206"  # package
 
-        # Verify price tiers were inserted
         cursor.execute("SELECT * FROM prices WHERE lcsc = ?", ("C17976",))
         prices = cursor.fetchall()
         assert len(prices) == 2
@@ -232,27 +256,24 @@ class TestDatabaseManager:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        component_data = {
-            "components": [
-                [
-                    "C123456",
-                    "TEST123",
-                    1000,
-                    None,
-                    None,
-                    [],
-                    None,
-                    None,
-                    {
-                        "Basic/Extended": {
-                            "values": {"default": ["Extended"]}
-                        },
-                    },
-                ]
+        lut = [_attr("Basic/Extended", "Extended")]
+        rows = [
+            [
+                "C123456",
+                "TEST123",
+                3,
+                "Test MCU",
+                None,
+                [],
+                None,
+                None,
+                [0],
+                1000,
+                42,
             ]
-        }
+        ]
 
-        manager._insert_components(cursor, component_data, "ICs", "MCU")
+        manager._insert_components(cursor, rows, SHARD_SCHEMA, lut, "ICs", "MCU")
         conn.commit()
 
         cursor.execute("SELECT basic FROM components WHERE lcsc = ?", ("C123456",))
@@ -275,20 +296,16 @@ class TestDatabaseManager:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        # Malformed component data
-        component_data = {
-            "components": [
-                ["C123"],  # Too few fields
-                None,  # Invalid type
-                [],  # Empty array
-            ]
-        }
+        rows = [
+            ["C123"],  # Too few fields — IndexError on access
+            None,  # Invalid type — TypeError on subscript
+            [],  # Empty array — IndexError on access
+        ]
 
-        # Should not raise exception
-        manager._insert_components(cursor, component_data, "Test", "Test")
+        # Should not raise
+        manager._insert_components(cursor, rows, SHARD_SCHEMA, [], "Test", "Test")
         conn.commit()
 
-        # No components should be inserted
         cursor.execute("SELECT COUNT(*) FROM components")
         count = cursor.fetchone()[0]
         assert count == 0
@@ -372,7 +389,7 @@ class TestDatabaseManager:
         assert not manager.db_path.exists()
 
     def test_insert_components_with_attributes_json(self, tmp_path):
-        """Test that attributes are properly stored as JSON."""
+        """Test that attributes are reconstructed from the LUT and stored as JSON."""
         db_path = tmp_path / "components.sqlite"
 
         manager = DatabaseManager()
@@ -383,36 +400,141 @@ class TestDatabaseManager:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
 
-        attributes = {
-            "Resistance": {"values": {"resistance": [10000]}},
-            "Tolerance": {"values": {"default": ["±1%"]}},
-        }
-
-        component_data = {
-            "components": [
-                [
-                    "C17976",
-                    "TEST",
-                    1000,
-                    None,
-                    None,
-                    [],
-                    None,
-                    None,
-                    attributes,
-                ]
+        # LUT entries preserve nested value-dict shape, including non-default keys
+        # (e.g. "resistance") that server.py's json_extract relies on.
+        lut = [
+            ["Resistance", {"values": {"resistance": [10000, "number"]}}],
+            ["Tolerance", {"values": {"default": ["±1%", "string"]}}],
+        ]
+        rows = [
+            [
+                "C17976",
+                "TEST",
+                2,
+                "10kΩ ±1%",
+                None,
+                [],
+                None,
+                None,
+                [0, 1],
+                1000,
+                1,
             ]
-        }
+        ]
 
-        manager._insert_components(cursor, component_data, "Test", "Test")
+        manager._insert_components(cursor, rows, SHARD_SCHEMA, lut, "Test", "Test")
         conn.commit()
 
         cursor.execute("SELECT attributes FROM components WHERE lcsc = ?", ("C17976",))
         row = cursor.fetchone()
 
-        # Should be valid JSON string
         stored_attributes = json.loads(row[0])
         assert stored_attributes["Resistance"]["values"]["resistance"][0] == 10000
         assert stored_attributes["Tolerance"]["values"]["default"][0] == "±1%"
 
         conn.close()
+
+    def test_resolve_attributes_skips_invalid_ids(self):
+        """Out-of-range and non-int IDs should be silently dropped, not raise."""
+        lut = [["Package", {"values": {"default": ["0805", "string"]}}]]
+
+        result = DatabaseManager._resolve_attributes(
+            [0, 999, -1, "not-an-int", None], lut
+        )
+
+        assert "Package" in result
+        assert len(result) == 1
+
+    def test_download_database_parses_manifest_and_shards(self, tmp_path, monkeypatch):
+        """End-to-end test of the new manifest+LUT+shard ingest pipeline (mocked HTTP)."""
+        manifest = {
+            "version": 2,
+            "totalComponents": 1,
+            "attributesLut": "attributes-lut.json.gz",
+            "categories": [
+                {
+                    "id": 1,
+                    "category": "Resistors",
+                    "subcategory": "Chip Resistor",
+                    "componentCount": 1,
+                    "shards": ["components-resistors__abcd1234-001.jsonl.gz"],
+                }
+            ],
+        }
+
+        lut = [
+            _attr("Basic/Extended", "Basic"),
+            _attr("Manufacturer", "Uniroyal Elec"),
+            _attr("Package", "1206"),
+        ]
+
+        shard_lines = [
+            json.dumps(SHARD_SCHEMA),
+            json.dumps(
+                [
+                    "C17976",
+                    "1206W4F680JT5E",
+                    2,
+                    "68Ω 1206",
+                    "http://example/ds.pdf",
+                    [{"qFrom": 1, "qTo": 99, "price": 0.005}],
+                    "http://example/img.jpg",
+                    "products/C17976",
+                    [0, 1, 2],
+                    33900,
+                    1,
+                ]
+            ),
+        ]
+        shard_bytes = gzip.compress(("\n".join(shard_lines)).encode("utf-8"))
+        lut_bytes = gzip.compress(json.dumps(lut).encode("utf-8"))
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            if url.endswith("/manifest.json"):
+                resp.json = MagicMock(return_value=manifest)
+            elif url.endswith("/attributes-lut.json.gz"):
+                resp.content = lut_bytes
+            elif url.endswith("/components-resistors__abcd1234-001.jsonl.gz"):
+                resp.content = shard_bytes
+            else:
+                raise AssertionError(f"unexpected URL {url}")
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        manager.db_path = tmp_path / "components.sqlite"
+        manager.data_dir = tmp_path
+        manager.version_file = tmp_path / "version.txt"
+
+        manager._download_database()
+
+        conn = sqlite3.connect(manager.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT lcsc, mfr_part, category, subcategory, description, stock, "
+            "basic, manufacturer, package FROM components"
+        )
+        rows = cursor.fetchall()
+        assert rows == [
+            (
+                "C17976",
+                "1206W4F680JT5E",
+                "Resistors",
+                "Chip Resistor",
+                "68Ω 1206",
+                33900,
+                1,
+                "Uniroyal Elec",
+                "1206",
+            )
+        ]
+
+        cursor.execute("SELECT qty_from, qty_to, price FROM prices WHERE lcsc=?", ("C17976",))
+        assert cursor.fetchall() == [(1, 99, 0.005)]
+        conn.close()
+
+        # Version metadata should record the manifest version.
+        assert "Manifest version: 2" in manager.version_file.read_text()
