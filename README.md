@@ -215,12 +215,41 @@ The database is **shared** across all your projects by default (recommended):
 
 **Why shared?**
 
-- One 900MB database serves all your projects
+- One ~1.8GB database serves all your projects
 - Saves disk space
 - Faster setup for new projects
 - Easier to keep updated
 
 **Dev mode (`--dev`)**: Only use this if you're developing the jlcpcb-mcp package itself. It creates a separate database in `./data/` which is useful for testing but wastes space for normal usage.
+
+##### Custom location (`JLCPCB_DATABASE_PATH`)
+
+If you want the database to live somewhere specific — e.g. an external SSD, a project-local directory, or a path you can `.gitignore` — set the `JLCPCB_DATABASE_PATH` environment variable. The value is the **full path to the SQLite file** (not just the directory):
+
+```jsonc
+// .mcp.json (or your client's MCP config)
+{
+  "mcpServers": {
+    "jlcpcb-search": {
+      "command": "jlcpcb-mcp",
+      "env": {
+        "JLCPCB_DATABASE_PATH": "/path/to/your/components.sqlite"
+      }
+    }
+  }
+}
+```
+
+To pre-download into that location, export the same variable before running setup:
+
+```bash
+JLCPCB_DATABASE_PATH=/path/to/your/components.sqlite \
+  jlcpcb-mcp-setup --refresh-db
+```
+
+Or skip pre-downloading and let the server build it on the first query.
+
+`JLCPCB_DATABASE_PATH` takes precedence over both the default platform location and `--dev` mode.
 
 ## License
 
