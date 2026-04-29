@@ -21,6 +21,27 @@ mcp = FastMCP("jlcpcb-search")
 # Initialize database manager
 db_manager = DatabaseManager()
 
+# Each entry: (attribute_name, value_key). Queried as
+# `$."{name}".values."{vkey}"[0]`. Multiple entries are OR'd together so
+# categories that store rated voltage under different attribute names all match.
+# Upstream uses inconsistent names: capacitors store it under "Allowable voltage",
+# while "Voltage Rated"/"Voltage Rating" are speculative — kept in case upstream
+# adopts them later, but they currently match zero rows in the catalog.
+VOLTAGE_RATING_ATTRIBUTE_PATHS = [
+    ("Voltage Rated", "voltage rated"),
+    ("Voltage Rating", "voltage rating"),
+    ("Allowable voltage", "voltage"),  # capacitors
+]
+
+
+def _voltage_rating_clause(voltage_v: float) -> tuple[str, list[float]]:
+    """Build a SQL OR-clause matching any known rated-voltage attribute path."""
+    parts = [
+        f'json_extract(attributes, \'$."{name}".values."{vkey}"[0]\') >= ?'
+        for name, vkey in VOLTAGE_RATING_ATTRIBUTE_PATHS
+    ]
+    return "(" + " OR ".join(parts) + ")", [voltage_v] * len(VOLTAGE_RATING_ATTRIBUTE_PATHS)
+
 
 class LiveAPIClient:
     """Client for fetching live stock and pricing data from JLCPCB."""
@@ -209,12 +230,10 @@ def search_components(search: SearchQuery) -> str:
     if search.voltage_rating:
         voltage_v = parse_voltage(search.voltage_rating)
         if voltage_v:
-            # Match voltage ratings >= requested (for safety margin)
-            conditions.append(
-                '(json_extract(attributes, \'$."Voltage Rated".values."voltage rated"[0]\') >= ? OR '
-                'json_extract(attributes, \'$."Voltage Rating".values."voltage rating"[0]\') >= ?)'
-            )
-            params.extend([voltage_v, voltage_v])
+            # Match voltage ratings >= requested (for safety margin).
+            sql_clause, sql_params = _voltage_rating_clause(voltage_v)
+            conditions.append(sql_clause)
+            params.extend(sql_params)
 
     # Parametric search - power rating
     if search.power_rating:
