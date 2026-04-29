@@ -374,19 +374,22 @@ class TestDatabaseManager:
 
     @patch("jlcpcb_mcp.database.requests.get")
     def test_download_database_network_error(self, mock_get, tmp_path):
-        """Test handling of network errors during download."""
-        mock_get.side_effect = Exception("Network error")
+        """A failed manifest fetch propagates and leaves no database behind."""
+        import requests as _requests
+
+        mock_get.side_effect = _requests.exceptions.ConnectionError("Network error")
 
         manager = DatabaseManager()
         manager.db_path = tmp_path / "components.sqlite"
         manager.data_dir = tmp_path
         manager.version_file = tmp_path / "version.txt"
 
-        with pytest.raises(Exception):
+        with pytest.raises(_requests.exceptions.RequestException):
             manager._download_database()
 
-        # Database should be cleaned up on error
+        # Neither the final DB nor the temp scratch file should remain.
         assert not manager.db_path.exists()
+        assert not (tmp_path / "components.sqlite.tmp").exists()
 
     def test_insert_components_with_attributes_json(self, tmp_path):
         """Test that attributes are reconstructed from the LUT and stored as JSON."""
@@ -538,3 +541,125 @@ class TestDatabaseManager:
 
         # Version metadata should record the manifest version.
         assert "Manifest version: 2" in manager.version_file.read_text()
+
+        # Tmp scratch file should not be left behind after a successful build.
+        assert not (tmp_path / "components.sqlite.tmp").exists()
+
+    def test_download_database_multi_shard_subcategory(self, tmp_path, monkeypatch):
+        """A single subcategory split across multiple shards ingests all components."""
+        manifest = {
+            "version": 2,
+            "totalComponents": 2,
+            "attributesLut": "attributes-lut.json.gz",
+            "categories": [
+                {
+                    "id": 1,
+                    "category": "Resistors",
+                    "subcategory": "Chip Resistor",
+                    "componentCount": 2,
+                    "shards": [
+                        "components-resistors__abcd1234-001.jsonl.gz",
+                        "components-resistors__abcd1234-002.jsonl.gz",
+                    ],
+                }
+            ],
+        }
+        lut = [_attr("Basic/Extended", "Basic")]
+
+        def make_shard(lcsc: str) -> bytes:
+            lines = [
+                json.dumps(SHARD_SCHEMA),
+                json.dumps(
+                    [lcsc, f"MFR-{lcsc}", 2, "desc", None, [], None, None, [0], 100, 1]
+                ),
+            ]
+            return gzip.compress(("\n".join(lines)).encode("utf-8"))
+
+        shard_a = make_shard("C100")
+        shard_b = make_shard("C200")
+        lut_bytes = gzip.compress(json.dumps(lut).encode("utf-8"))
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            if url.endswith("/manifest.json"):
+                resp.json = MagicMock(return_value=manifest)
+            elif url.endswith("/attributes-lut.json.gz"):
+                resp.content = lut_bytes
+            elif url.endswith("-001.jsonl.gz"):
+                resp.content = shard_a
+            elif url.endswith("-002.jsonl.gz"):
+                resp.content = shard_b
+            else:
+                raise AssertionError(f"unexpected URL {url}")
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        manager.db_path = tmp_path / "components.sqlite"
+        manager.data_dir = tmp_path
+        manager.version_file = tmp_path / "version.txt"
+
+        manager._download_database()
+
+        conn = sqlite3.connect(manager.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT lcsc FROM components ORDER BY lcsc")
+        assert [row[0] for row in cursor.fetchall()] == ["C100", "C200"]
+        conn.close()
+
+    def test_download_database_proceeds_on_unknown_manifest_version(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """A manifest with an unexpected version logs a warning but still builds."""
+        manifest = {
+            "version": 99,  # not MANIFEST_VERSION
+            "totalComponents": 1,
+            "attributesLut": "attributes-lut.json.gz",
+            "categories": [
+                {
+                    "id": 1,
+                    "category": "Resistors",
+                    "subcategory": "Chip Resistor",
+                    "componentCount": 1,
+                    "shards": ["components-resistors__abcd1234-001.jsonl.gz"],
+                }
+            ],
+        }
+        lut = [_attr("Basic/Extended", "Basic")]
+        shard_lines = [
+            json.dumps(SHARD_SCHEMA),
+            json.dumps(["C1", "M1", 2, "d", None, [], None, None, [0], 1, 1]),
+        ]
+        shard_bytes = gzip.compress(("\n".join(shard_lines)).encode("utf-8"))
+        lut_bytes = gzip.compress(json.dumps(lut).encode("utf-8"))
+
+        def fake_get(url, timeout=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            if url.endswith("/manifest.json"):
+                resp.json = MagicMock(return_value=manifest)
+            elif url.endswith("/attributes-lut.json.gz"):
+                resp.content = lut_bytes
+            else:
+                resp.content = shard_bytes
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        manager.db_path = tmp_path / "components.sqlite"
+        manager.data_dir = tmp_path
+        manager.version_file = tmp_path / "version.txt"
+
+        manager._download_database()
+
+        # Build proceeded.
+        conn = sqlite3.connect(manager.db_path)
+        assert conn.execute("SELECT COUNT(*) FROM components").fetchone()[0] == 1
+        conn.close()
+
+        # Warning was logged to stderr.
+        captured = capsys.readouterr()
+        assert "Manifest version 99" in captured.err

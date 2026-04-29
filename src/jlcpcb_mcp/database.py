@@ -69,8 +69,18 @@ class DatabaseManager:
         print(message, file=sys.stderr, end=end, flush=True)
 
     def _download_database(self) -> None:
-        """Download and build the JLCPCB database from upstream manifest + shards."""
+        """Download and build the JLCPCB database from upstream manifest + shards.
+
+        Builds into a sibling ``*.tmp`` file and atomically renames on success so
+        a crashed or interrupted build never leaves a half-populated database in
+        place of a working one.
+        """
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build into a temporary path; rename to the final location only on success.
+        tmp_path = self.db_path.with_name(self.db_path.name + ".tmp")
+        if tmp_path.exists():
+            tmp_path.unlink()
 
         self._log("=" * 70)
         self._log("🔧 FIRST RUN: Building JLCPCB Component Database")
@@ -81,6 +91,7 @@ class DatabaseManager:
         self._log("Future searches will be instant!")
         self._log("")
 
+        conn: sqlite3.Connection | None = None
         try:
             # Download manifest
             self._log("📥 Step 1/4: Downloading manifest...")
@@ -111,13 +122,13 @@ class DatabaseManager:
             self._log(f"✓ LUT downloaded ({len(lut)} entries)")
             self._log("")
 
-            # Create database
+            # Create schema in the tmp DB
             self._log("🔨 Step 3/4: Creating database schema...")
-            self._create_database_schema()
+            self._create_database_schema(tmp_path)
             self._log("✓ Schema created")
             self._log("")
 
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(tmp_path)
             cursor = conn.cursor()
 
             categories = manifest["categories"]
@@ -143,13 +154,17 @@ class DatabaseManager:
                         self._insert_components(
                             cursor, rows, schema, lut, cat_name, subcat_name
                         )
-                    # Commit per subcategory so a mid-build crash leaves a partial-but-valid DB.
                     conn.commit()
                 except Exception as e:
                     self._log(f"\n  ⚠️  Warning: Failed to process {subcat_name}: {e}")
                     continue
 
             conn.close()
+            conn = None
+
+            # Atomically swap tmp into place. Any prior DB is replaced wholesale;
+            # callers that crashed mid-build never observe a half-built DB.
+            tmp_path.replace(self.db_path)
 
             self._log("\n")
             self._log("=" * 70)
@@ -169,9 +184,12 @@ class DatabaseManager:
 
         except Exception as e:
             self._log(f"\n❌ Error building database: {e}")
-            if self.db_path.exists():
-                self.db_path.unlink()
+            if tmp_path.exists():
+                tmp_path.unlink()
             raise
+        finally:
+            if conn is not None:
+                conn.close()
 
     def _fetch_shard(self, shard_filename: str) -> tuple[list, dict]:
         """
@@ -194,9 +212,10 @@ class DatabaseManager:
         rows = [json.loads(line) for line in lines[1:] if line]
         return rows, schema
 
-    def _create_database_schema(self) -> None:
-        """Create the SQLite database schema."""
-        conn = sqlite3.connect(self.db_path)
+    def _create_database_schema(self, target_path: Path | None = None) -> None:
+        """Create the SQLite database schema at ``target_path`` (defaults to ``self.db_path``)."""
+        path = target_path if target_path is not None else self.db_path
+        conn = sqlite3.connect(path)
         cursor = conn.cursor()
 
         # Components table
@@ -248,10 +267,16 @@ class DatabaseManager:
         main_cat: str,
         subcat: str,
     ) -> None:
-        """Insert components from one or more shard rows into the database."""
-        # Resolve schema indices once per shard.
-        idx_lcsc = schema.get("lcsc", 0)
-        idx_mfr = schema.get("mfr", 1)
+        """Insert components from one or more shard rows into the database.
+
+        Raises ``KeyError`` if the shard schema header is missing the required
+        ``lcsc`` or ``mfr`` fields — caller catches per-subcategory and skips.
+        """
+        # Resolve schema indices once per shard. lcsc/mfr are required; their
+        # absence means the shard header is malformed and we should bail rather
+        # than silently misalign positional reads.
+        idx_lcsc = schema["lcsc"]
+        idx_mfr = schema["mfr"]
         idx_description = schema.get("description")
         idx_datasheet = schema.get("datasheet")
         idx_price = schema.get("price")
