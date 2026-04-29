@@ -13,6 +13,39 @@ from pathlib import Path
 import platformdirs
 import requests
 
+# Schema definition shared by the production builder and tests so they can't
+# silently drift apart. Uses CREATE ... IF NOT EXISTS throughout so it is safe
+# to run against an existing DB.
+COMPONENTS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS components (
+    lcsc TEXT PRIMARY KEY,
+    mfr_part TEXT,
+    category TEXT,
+    subcategory TEXT,
+    description TEXT,
+    stock INTEGER,
+    datasheet TEXT,
+    image TEXT,
+    basic INTEGER,
+    manufacturer TEXT,
+    package TEXT,
+    attributes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_category ON components(category);
+CREATE INDEX IF NOT EXISTS idx_subcategory ON components(subcategory);
+CREATE INDEX IF NOT EXISTS idx_mfr_part ON components(mfr_part);
+CREATE INDEX IF NOT EXISTS idx_manufacturer ON components(manufacturer);
+CREATE INDEX IF NOT EXISTS idx_basic ON components(basic);
+CREATE TABLE IF NOT EXISTS prices (
+    lcsc TEXT,
+    qty_from INTEGER,
+    qty_to INTEGER,
+    price REAL,
+    FOREIGN KEY (lcsc) REFERENCES components(lcsc)
+);
+CREATE INDEX IF NOT EXISTS idx_prices_lcsc ON prices(lcsc);
+"""
+
 
 class DatabaseManager:
     """Manages the local JLCPCB component database."""
@@ -267,47 +300,10 @@ class DatabaseManager:
         """Create the SQLite database schema at ``target_path`` (defaults to ``self.db_path``)."""
         path = target_path if target_path is not None else self.db_path
         conn = sqlite3.connect(path)
-        cursor = conn.cursor()
-
-        # Components table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS components (
-                lcsc TEXT PRIMARY KEY,
-                mfr_part TEXT,
-                category TEXT,
-                subcategory TEXT,
-                description TEXT,
-                stock INTEGER,
-                datasheet TEXT,
-                image TEXT,
-                basic INTEGER,
-                manufacturer TEXT,
-                package TEXT,
-                attributes TEXT
-            )
-        """)
-
-        # Create indexes for common queries
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_category ON components(category)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_subcategory ON components(subcategory)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_mfr_part ON components(mfr_part)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_manufacturer ON components(manufacturer)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_basic ON components(basic)")
-
-        # Price table (separate for normalization)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS prices (
-                lcsc TEXT,
-                qty_from INTEGER,
-                qty_to INTEGER,
-                price REAL,
-                FOREIGN KEY (lcsc) REFERENCES components(lcsc)
-            )
-        """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_prices_lcsc ON prices(lcsc)")
-
-        conn.commit()
-        conn.close()
+        try:
+            conn.executescript(COMPONENTS_SCHEMA_SQL)
+        finally:
+            conn.close()
 
     def _insert_components(
         self,

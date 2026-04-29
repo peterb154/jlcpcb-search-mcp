@@ -27,17 +27,24 @@ db_manager = DatabaseManager()
 # Upstream uses inconsistent names: capacitors store it under "Allowable voltage",
 # while "Voltage Rated"/"Voltage Rating" are speculative — kept in case upstream
 # adopts them later, but they currently match zero rows in the catalog.
-VOLTAGE_RATING_ATTRIBUTE_PATHS = [
+VOLTAGE_RATING_ATTRIBUTE_PATHS: tuple[tuple[str, str], ...] = (
     ("Voltage Rated", "voltage rated"),
     ("Voltage Rating", "voltage rating"),
     ("Allowable voltage", "voltage"),  # capacitors
-]
+)
 
 
 def _voltage_rating_clause(voltage_v: float) -> tuple[str, list[float]]:
-    """Build a SQL OR-clause matching any known rated-voltage attribute path."""
+    """Build a SQL OR-clause matching any known rated-voltage attribute path.
+
+    The CAST(... AS REAL) is defensive: if upstream ever stores a voltage as
+    a string (e.g. "25V"), SQLite's default mixed-type comparison treats TEXT
+    as greater than NUMERIC, which would make every string row match every
+    numeric threshold and silently accept under-rated parts. CAST forces a
+    numeric comparison and parses leading numerics, so "25V" → 25.0.
+    """
     parts = [
-        f'json_extract(attributes, \'$."{name}".values."{vkey}"[0]\') >= ?'
+        f'CAST(json_extract(attributes, \'$."{name}".values."{vkey}"[0]\') AS REAL) >= ?'
         for name, vkey in VOLTAGE_RATING_ATTRIBUTE_PATHS
     ]
     return "(" + " OR ".join(parts) + ")", [voltage_v] * len(VOLTAGE_RATING_ATTRIBUTE_PATHS)

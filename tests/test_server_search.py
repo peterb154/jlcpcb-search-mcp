@@ -10,6 +10,7 @@ import sqlite3
 
 import pytest
 
+from jlcpcb_mcp.database import COMPONENTS_SCHEMA_SQL
 from jlcpcb_mcp.server import (
     VOLTAGE_RATING_ATTRIBUTE_PATHS,
     _voltage_rating_clause,
@@ -17,24 +18,9 @@ from jlcpcb_mcp.server import (
 
 
 def _make_components_db() -> sqlite3.Connection:
-    """Build a tiny in-memory components table mirroring the real schema."""
+    """Build an in-memory components DB using the production schema."""
     conn = sqlite3.connect(":memory:")
-    conn.execute("""
-        CREATE TABLE components (
-            lcsc TEXT PRIMARY KEY,
-            mfr_part TEXT,
-            category TEXT,
-            subcategory TEXT,
-            description TEXT,
-            stock INTEGER,
-            datasheet TEXT,
-            image TEXT,
-            basic INTEGER,
-            manufacturer TEXT,
-            package TEXT,
-            attributes TEXT
-        )
-    """)
+    conn.executescript(COMPONENTS_SCHEMA_SQL)
     return conn
 
 
