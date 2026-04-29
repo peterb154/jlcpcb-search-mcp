@@ -895,3 +895,31 @@ class TestDatabaseManager:
             manager._http_get_with_retry("http://example/down", timeout=5)
 
         assert len(attempts) == DatabaseManager.HTTP_RETRY_ATTEMPTS
+
+    def test_http_get_with_retry_fails_fast_on_4xx_after_5xx(self, monkeypatch):
+        """A 404 mid-retry-sequence aborts immediately — non-retryable interrupts retry."""
+        monkeypatch.setattr("jlcpcb_mcp.database.time.sleep", lambda *_: None)
+
+        attempts = []
+
+        def fake_get(url, timeout=None):
+            attempts.append(url)
+            resp = MagicMock()
+            if len(attempts) == 1:
+                resp.status_code = 503
+                resp.raise_for_status = MagicMock()
+            else:
+                resp.status_code = 404
+                resp.raise_for_status = MagicMock(
+                    side_effect=requests.exceptions.HTTPError("404 Not Found")
+                )
+            return resp
+
+        monkeypatch.setattr("jlcpcb_mcp.database.requests.get", fake_get)
+
+        manager = DatabaseManager()
+        with pytest.raises(requests.exceptions.HTTPError):
+            manager._http_get_with_retry("http://example/x", timeout=5)
+
+        # One retry happened (after the 503), then the 404 aborted the loop.
+        assert len(attempts) == 2

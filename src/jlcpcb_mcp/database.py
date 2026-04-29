@@ -111,8 +111,10 @@ class DatabaseManager:
                 )
                 time.sleep(backoff)
 
-        assert last_exc is not None  # loop body always sets last_exc on failure
-        raise last_exc
+        # The loop only exits without returning when last_exc was set on every
+        # iteration; the `or` is belt-and-suspenders for the unreachable case so
+        # `python -O` (which strips asserts) can't surface a `raise None` TypeError.
+        raise last_exc or RuntimeError("retry loop exited without an exception")
 
     def _download_database(self) -> None:
         """Download and build the JLCPCB database from upstream manifest + shards.
