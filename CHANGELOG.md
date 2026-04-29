@@ -2,6 +2,46 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-04-29)
+
+### Bug Fixes
+
+- **database**: Atomic build, strict schema, broader test coverage
+  ([`191d405`](https://github.com/peterb154/jlcpcb-search-mcp/commit/191d405ba148bca74a09f58c0e585484f09c8190))
+
+- **database**: Port to upstream manifest+LUT+shards format
+  ([`73451da`](https://github.com/peterb154/jlcpcb-search-mcp/commit/73451da522913a58000ee16fe90b3ab5bac29365))
+
+### Chores
+
+- Address review LOW items + correct README size
+  ([`a11fb82`](https://github.com/peterb154/jlcpcb-search-mcp/commit/a11fb828109461fd0a23a30d286a69c654358853))
+
+### Continuous Integration
+
+- Added unit tests
+  ([`52492b7`](https://github.com/peterb154/jlcpcb-search-mcp/commit/52492b79c6b9096fb574a30a903685c96dec141c))
+
+### Documentation
+
+- **readme**: Add Tools section listing MCP tools
+  ([`d8099a3`](https://github.com/peterb154/jlcpcb-search-mcp/commit/d8099a3ec5360dd70c526c575dbec6e19ca5fe36))
+
+- **readme**: Clarify data freshness model
+  ([`d80d6f9`](https://github.com/peterb154/jlcpcb-search-mcp/commit/d80d6f950db48d0f50284371bb7736fd06d87214))
+
+- **readme**: Promote Data Freshness to top-level section
+  ([`68cf6e8`](https://github.com/peterb154/jlcpcb-search-mcp/commit/68cf6e8f371d3dd4669a0d8da39b4ad582fadba5))
+
+- **readme**: Use compact table style to satisfy markdownlint
+  ([`dcaf578`](https://github.com/peterb154/jlcpcb-search-mcp/commit/dcaf57841c1d632bc77d548e70f40a0b43b440a5))
+
+### Features
+
+- **database**: Add HTTP retry/backoff and harden test coverage
+  ([`5258474`](https://github.com/peterb154/jlcpcb-search-mcp/commit/5258474b349325c0f020e43e034a11be65e35550))
+
+
 ## v1.1.4 (2025-11-22)
 
 ### Bug Fixes
