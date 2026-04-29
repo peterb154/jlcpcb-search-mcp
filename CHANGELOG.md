@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.2.1 (2026-04-29)
+
+### Bug Fixes
+
+- **server**: Voltage_rating filter now matches capacitors
+  ([`e5706e0`](https://github.com/peterb154/jlcpcb-search-mcp/commit/e5706e01cb13560592b4b97300f67aab622d6b36))
+
+### Chores
+
+- Address review LOW items on PR #9
+  ([`1a66567`](https://github.com/peterb154/jlcpcb-search-mcp/commit/1a665674b22aff028c506c01d1889e388b97a3bb))
+
+### Documentation
+
+- **readme**: Document JLCPCB_DATABASE_PATH for custom DB location
+  ([`40b12ff`](https://github.com/peterb154/jlcpcb-search-mcp/commit/40b12ff0e3efbb8c18e8e6a322298df851b41cdc))
+
+
 ## v1.2.0 (2026-04-29)
 
 ### Bug Fixes
